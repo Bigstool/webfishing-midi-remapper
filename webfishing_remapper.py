@@ -22,6 +22,8 @@ class MidiMapper:
         self.log_callback = log_callback
         self.running = False
         self.thread = None
+        self.inport = None
+        self.outport = None
 
     def start(self):
         self.running = True
@@ -30,24 +32,34 @@ class MidiMapper:
 
     def stop(self):
         self.running = False
+        # Close ports if open
+        if self.inport:
+            self.inport.close()
+            self.inport = None
+        if self.outport:
+            self.outport.close()
+            self.outport = None
 
     def run(self):
         try:
-            with mido.open_input(self.input_name) as inport, mido.open_output(self.output_name) as outport:
-                self.log_callback(f"Remapping started from '{self.input_name}' to '{self.output_name}'...\n")
-                for msg in inport:
-                    if not self.running:
-                        break
-                    if msg.type in ('note_on', 'note_off'):
-                        new_note = remap_note(msg.note)
-                        new_msg = msg.copy(note=new_note)
-                        outport.send(new_msg)
-                        self.log_callback(f"{msg.type.upper()} {msg.note} → {new_note}")
-                    else:
-                        outport.send(msg)
+            self.inport = mido.open_input(self.input_name)
+            self.outport = mido.open_output(self.output_name)
+            self.log_callback(f"Remapping started from '{self.input_name}' to '{self.output_name}'...\n")
+            for msg in self.inport:
+                if not self.running:
+                    break
+                if msg.type in ('note_on', 'note_off'):
+                    new_note = remap_note(msg.note)
+                    new_msg = msg.copy(note=new_note)
+                    self.outport.send(new_msg)
+                    self.log_callback(f"{msg.type.upper()} {msg.note} → {new_note}")
+                else:
+                    self.outport.send(msg)
         except Exception as e:
             self.log_callback(f"Error: {e}")
-            self.running = False
+        finally:
+            # Extra safety on exit
+            self.stop()
 
 
 # GUI class
